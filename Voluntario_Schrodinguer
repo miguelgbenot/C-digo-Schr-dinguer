@@ -1,0 +1,303 @@
+# include "complex.h"
+# include <math.h>
+# include <stdio.h>
+# include "gsl_rng.h"
+gsl_rng *tau; 
+
+#define pi 3.14159265358979323846
+#define el 2.71828
+
+
+
+int main ()
+{
+	int mT = 0; 
+	FILE *g;
+	FILE *r;
+	FILE *y;
+	FILE *P; 
+	FILE *C; 
+	C = fopen("Colapso.txt","w"); 
+	g = fopen("Datosscho.txt","w");
+	r =fopen("Valores.txt","w");
+	y =fopen("Pruebas.txt","w"); 
+	P = fopen("Pd.txt","w");
+
+	int i,j,e,p,k,w,as;
+	int N,n,u,T;
+	double lambda;
+	double h,s;
+	double Norma;
+	double Kr,mR; 
+	double col = 0; 
+	mR = 0;
+	Kr = 0; 
+	h=0.1;//Discretizado espacial
+	s=0.1;//Discretizado temporal
+	N = 500;//Límite del discretizado espacial, la j va de O a N
+	lambda = 0.3;
+	int nciclos;
+	nciclos = N/10;
+
+	double k0,k0gorro,sgorro,a1,a2; //Todo esto son constantes
+	k0 = (1.0*2*pi*nciclos)/(N*1.0*h);
+	k0gorro = h*k0;
+	a1 = k0gorro*k0gorro;
+	a2 = 4*a1;
+	sgorro = s/(h*h);
+
+//Los parametros del numero aleatorio deben de ir fuera 
+	extern gsl_rng *tau;
+	int semilla = 816870;
+	tau = gsl_rng_alloc(gsl_rng_taus);
+	gsl_rng_set(tau,semilla);
+
+	double liminf,limsup;
+	liminf = 2*1.0*N/5.0;
+	limsup = 3*N*1.0/5.0;
+
+
+//Definimos el potencial como un vector en dimensiones espaciales 
+
+	double Vjgorro [N+1]; //Va desde 0 hasta N
+	for(i=0;i<(1+N);i++)
+	{
+		if(i>liminf && i<limsup) 
+		{
+		Vjgorro[i] = lambda*a1;
+		//printf("En la iteracion %i\t el potencial es %lf\n",i,Vjgorro[i]); 
+		}
+		else
+		{
+		Vjgorro[i] = 0;
+		}
+	}
+
+
+//Definimos la funcion de onda inicial(Primer vector de la matriz)
+	double a01,exp2,exp02,b01,b02,Ncuad;
+	fcomplex phit0e,c0,exp1;
+	fcomplex phi[N+1];
+	double TER,Norma1;
+	double K; 
+
+
+// PARTE VOLUNTARIA 
+
+		// Genero el bucle de m experimentos //
+
+		int m = 1; //Numero de experimentos 
+		for(e=1;e<=m;e++)
+		{
+
+	//Generamos la función de onda inicial
+	Norma1 =0;
+	TER = 0; 
+	Ncuad = N*N;
+
+
+	for(j=0;j<=N;j++)
+	{
+		a01 = j*k0gorro; // Exponente Onda plana 
+		b01 =(8.0)*((4*j-N)*(4*j-N)); //Exponente de la Envolvente
+		b02 = -(1.0*b01)/Ncuad;
+		exp1 = Cgauss(a01,1); //Onda plana 
+		exp2 = exp(b02); 
+		phi[j] = RCmul(exp2,exp1);
+		TER = Cabs(phi[j])*Cabs(phi[j]);
+		Norma1 = Norma1 + TER;
+	}
+
+//Normalizamos la funcion de onda inicial 
+		for(j=0;j<=N;j++)
+		{
+		phi[j] = RCmul(1.0/sqrt(Norma1),phi[j]); 
+		} 
+
+//Definimos el parámetro AJ0
+	double AJ01[N+1]; 
+	double AJ02;
+	fcomplex AJ0 [N+1]; 
+	AJ02 = 2.0/sgorro;
+	for(j=0;j<=N;j++)
+	{
+		AJ01[j] = 2 + Vjgorro[j];//Donde j era el paso espacial
+		AJ0[j] = Csub(Complex(0.0,AJ02),Complex(AJ01[j],0.0)); //Uno la parte real con la imaginaria 
+	}
+
+//El vector de alpha
+	fcomplex alpha[N]; 
+	fcomplex sumadenom;
+	alpha[N-1] = Complex(0.0,0.0); //El valor inicial de alpha
+
+	for(i=(N-1);i>=1;i--) 
+	{
+		sumadenom = Cadd(AJ0[i],alpha[i]); //El primer alpha, alpha (u+1) = alpha(n), la condicion inicial
+		alpha[i-1] = Cdiv(Complex(-1.0,0.0),sumadenom);
+	}
+
+//El vector gamma
+	fcomplex Gammadenom;
+	fcomplex Gamma[N];
+	for(i=0;i<N;i++)
+	{
+		Gammadenom = Cadd(AJ0[i],alpha[i]); //Suma de complejo con real para obtener gamma
+		Gamma[i] = Cdiv(Complex(1.0,0.0),Gammadenom); 
+	}
+
+
+
+
+		for(;;)//BUCLE INFINITO 
+		{ 
+	
+		//Iniciamos el bucle temporal
+		int nD = 9;
+		for(w=0;w<=nD;w++)//EMPIEZA EL BUCLE TEMPORAL A PARTIR DE ESTA LINEA 
+		{
+
+		double phicuad[N+1];
+		Norma = 0;
+
+//Definimos el vector de bjn
+	fcomplex bjn[N+1];
+	double factor; 
+	factor = 4.0/sgorro;
+	for(i=0;i<=N;i++)
+	{
+		bjn[i]=Cmul(Complex(0.0,factor),phi[i]);
+	}
+
+// El vector Beta 
+	fcomplex beta[N];
+	fcomplex beta1,beta2;
+	beta[N-1] = Complex(0.0,0.0); 
+	for(i=(N-1);i>=1;i--) //u =N-2 = n-1; 
+	{
+		beta1 = Cmul(Gamma[i],bjn[i]);
+		beta2 = Cmul(Gamma[i],beta[i]);
+		beta[i-1] = Csub(beta1,beta2);
+	}
+
+//El vector de Xi, finalmente 
+	fcomplex Xi[N+1];
+	Xi[0] = Complex(0.0,0.0);
+	fcomplex P1,S1;
+	for(i=0;i<N;i++)
+	{
+		P1 = Cmul(alpha[i],Xi[i]);
+		S1 = Cadd(P1,beta[i]); 
+		Xi[i+1] = S1;
+	}
+
+//Calculo el avance temporal de phi
+
+	for(i=0;i<(N+1);i++)
+	{
+		phi[i] = Csub(Xi[i],phi[i]);
+	}
+
+		} //Cierro el bucle nD, el del obligatorio (ESTO ES CERRAR EL BUCLE DE AVANCE TEMPORAL). 
+
+
+	double Ancho;  //PARTE DE ESTUDIO DE LOS DETECTORES PARA DETERMINAR EL COEFICIENTE DE TRANSMISION
+	Ancho = 1.0*N/5;
+
+// Calculamos Pd
+	double Pd, Pi,ci,cd;
+	int k;
+	Pd = 0; 
+	k = 0; 
+	for (i = (4.0*Ancho); i<=N;i++)
+	{
+	cd = Cabs(phi[i])*Cabs(phi[i]);
+	Pd = Pd +cd;
+	}
+	
+// Generamos un numero aleatorio x 
+	double xD; 
+	xD = gsl_rng_uniform(tau);
+
+	if(xD<Pd)
+	{
+	mT = mT + 1;
+	break; //Esto hace que vuelva al paso 1, sale del bucle infinito
+	}
+
+// Hacer phij 0 en la parte derecha 
+	double NormaD,TerD; 
+	NormaD = 0;
+	TerD = 0;
+	for (j=4.0*Ancho;j<=N;j++)
+	{
+	phi[j] = Complex(0.0,0.0);
+	}
+
+	for(j=0;j<=N;j++)
+	{ 
+	TerD = Cabs(phi[j])*Cabs(phi[j]); 
+	NormaD = NormaD + TerD;
+	}
+
+	for(j=0; j<=N; j++)
+	{
+	phi[j] = RCmul((1.0/sqrt(NormaD)),phi[j]);
+	}
+
+
+//Calculamos Pi (Probabilida de que esté a la izquierda del detector) 
+	Pi = 0; 
+	for (i =0;i<=Ancho;i++)
+	{
+	ci = Cabs(phi[i])*Cabs(phi[i]); 
+	Pi = Pi + ci;
+	}
+
+// Generamos un nuevo número aleatorio
+	double xi;
+	xi = gsl_rng_uniform(tau);
+	double TerI,NormaI;
+	TerI =0;
+	NormaI= 0; 
+
+	if(xi<Pi)
+	{
+	mR = mR + 1; 
+	break;
+	}
+
+	for (j=0;j<=Ancho;j++) 
+	{
+	phi[j] = Complex(0.0,0.0); 
+	}
+
+	for(j=0;j<=N;j++)
+	{ 
+	TerI = Cabs(phi[j])*Cabs(phi[j]);
+	NormaI = NormaI + TerI; 
+	}  
+
+	for(j=0; j<=N; j++)
+	{
+	phi[j] = RCmul((1./sqrt(NormaI)),phi[j]);
+	}
+
+
+
+
+		} // Fin bucle infinito 
+
+	}//LLAVE DE CERRAR EL NUMERO DE EXPERIMENTOS 
+
+	//Estudiamos el colapso de la funcion de onda. 
+	for(j=0;j<=N;j++)
+	{
+	col = Cabs(phi[j])*Cabs(phi[j]);
+	fprintf(C,"%lf\n",col);
+	}
+
+
+	K = mT*1.0/m; 
+	Kr = mR*1.0/m; 
+	printf("Reflexion %lf\n",Kr); 
+} //Fin main 
